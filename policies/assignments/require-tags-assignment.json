@@ -5,7 +5,7 @@
     "scope": "/subscriptions/{subscription-id}",
     "parameters": {
       "tagName1": {
-        "value": "Environment"
+        "value": "Env"
       },
       "tagName2": {
         "value": "Ownername"
