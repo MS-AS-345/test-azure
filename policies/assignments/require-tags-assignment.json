@@ -1,16 +1,14 @@
 {
-  "properties": {
-    "displayName": "Require tags on all resources",
-    "policyDefinitionId": "/subscriptions/{subscription-id}/providers/Microsoft.Authorization/policyDefinitions/require-tags",
-    "scope": "/subscriptions/{subscription-id}",
-    "parameters": {
-      "tagName1": {
-        "value": "Env"
-      },
-      "tagName2": {
-        "value": "Owner"
-      }
+  "policyDefinitionName": "require-tags",
+  "displayName": "Require tags on all resources",
+  "description": "This assignment ensures all resources have Environment and Owner tags",
+  "parameters": {
+    "tagName1": {
+      "value": "Environment"
     },
-    "enforcementMode": "Default"
-  }
+    "tagName2": {
+      "value": "Owner"
+    }
+  },
+  "enforcementMode": "Default"
 }
