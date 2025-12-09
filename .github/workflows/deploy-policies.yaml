@@ -1,1 +1,84 @@
+name: Deploy Azure Policies
 
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'policies/**'
+      - '.github/workflows/deploy-policies.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'policies/**'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+jobs:
+  deploy-policies:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy Policy Definitions
+        run: |
+          echo "Deploying Azure Policy Definitions..."
+          
+          for policy_file in policies/definitions/*.json; do
+            if [ -f "$policy_file" ]; then
+              policy_name=$(basename "$policy_file" .json)
+              echo "Creating/Updating policy: $policy_name"
+              
+              az policy definition create \
+                --name "$policy_name" \
+                --rules "$(jq '.properties.policyRule' $policy_file)" \
+                --params "$(jq '.properties.parameters // {}' $policy_file)" \
+                --display-name "$(jq -r '.properties.displayName' $policy_file)" \
+                --description "$(jq -r '.properties.description // ""' $policy_file)" \
+                --mode "$(jq -r '.properties.mode // "All"' $policy_file)" \
+                --subscription "$AZURE_SUBSCRIPTION_ID" \
+                || echo "Policy $policy_name already exists, updating..."
+            fi
+          done
+
+      - name: Assign Policies
+        run: |
+          echo "Assigning Azure Policies..."
+          
+          for assignment_file in policies/assignments/*.json; do
+            if [ -f "$assignment_file" ]; then
+              assignment_name=$(basename "$assignment_file" .json)
+              echo "Creating/Updating assignment: $assignment_name"
+              
+              policy_definition_id=$(jq -r '.properties.policyDefinitionId' $assignment_file)
+              display_name=$(jq -r '.properties.displayName' $assignment_file)
+              
+              az policy assignment create \
+                --name "$assignment_name" \
+                --display-name "$display_name" \
+                --policy "$policy_definition_id" \
+                --scope "/subscriptions/$AZURE_SUBSCRIPTION_ID" \
+                || echo "Assignment $assignment_name already exists"
+            fi
+          done
+
+      - name: Summary
+        run: |
+          echo "✅ Azure Policy deployment completed!"
+          echo "Listing all policy assignments:"
+          az policy assignment list --output table
