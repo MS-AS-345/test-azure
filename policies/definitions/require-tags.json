@@ -1,1 +1,42 @@
-
+{
+  "properties": {
+    "displayName": "Require specified tags on resources",
+    "description": "Enforces required tags (Environment and Owner) on all resources",
+    "mode": "Indexed",
+    "parameters": {
+      "tagName1": {
+        "type": "String",
+        "metadata": {
+          "displayName": "Tag Name 1",
+          "description": "Name of the first required tag"
+        },
+        "defaultValue": "Environment"
+      },
+      "tagName2": {
+        "type": "String",
+        "metadata": {
+          "displayName": "Tag Name 2",
+          "description": "Name of the second required tag"
+        },
+        "defaultValue": "Owner"
+      }
+    },
+    "policyRule": {
+      "if": {
+        "anyOf": [
+          {
+            "field": "[concat('tags[', parameters('tagName1'), ']')]",
+            "exists": "false"
+          },
+          {
+            "field": "[concat('tags[', parameters('tagName2'), ']')]",
+            "exists": "false"
+          }
+        ]
+      },
+      "then": {
+        "effect": "deny"
+      }
+    }
+  }
+}
