@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'policies/**'
+      - '.github/workflows/deploy-policies.yml'
   workflow_dispatch:
 
 jobs:
@@ -18,32 +21,99 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Verify Login
+      - name: Set Subscription
         run: |
-          az account show
-          echo "Logged in successfully!"
+          az account set --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          echo "Logged in successfully to subscription: $(az account show --query name -o tsv)"
 
       - name: Deploy Policy Definitions
         run: |
-          echo "Deploying policies..."
-          if [ -d "policies/definitions" ]; then
-            for policy_file in policies/definitions/*.json; do
-              if [ -f "$policy_file" ]; then
-                policy_name=$(basename "$policy_file" .json)
-                echo "Processing: $policy_name"
-                
-                az policy definition create \
-                  --name "$policy_name" \
-                  --rules "$(jq -c '.properties.policyRule' $policy_file)" \
-                  --params "$(jq -c '.properties.parameters // {}' $policy_file)" \
-                  --display-name "$(jq -r '.properties.displayName' $policy_file)" \
-                  --mode "$(jq -r '.properties.mode // "All"' $policy_file)" \
-                  || echo "Policy may already exist"
-              fi
-            done
+          echo "Deploying Azure Policy Definitions..."
+          
+          if [ ! -d "policies/definitions" ]; then
+            echo "No policies/definitions directory found"
+            exit 0
           fi
+          
+          for policy_file in policies/definitions/*.json; do
+            if [ -f "$policy_file" ]; then
+              policy_name=$(basename "$policy_file" .json)
+              echo "=========================================="
+              echo "Processing policy: $policy_name"
+              
+              az policy definition create \
+                --name "$policy_name" \
+                --rules "$(jq -c '.properties.policyRule' $policy_file)" \
+                --params "$(jq -c '.properties.parameters // {}' $policy_file)" \
+                --display-name "$(jq -r '.properties.displayName' $policy_file)" \
+                --description "$(jq -r '.properties.description // ""' $policy_file)" \
+                --mode "$(jq -r '.properties.mode // "All"' $policy_file)" \
+                && echo "✅ Policy created/updated successfully" \
+                || echo "⚠️  Policy may already exist"
+            fi
+          done
+
+      - name: Assign Policies
+        run: |
+          echo "=========================================="
+          echo "Assigning Azure Policies..."
+          echo "=========================================="
+          
+          if [ ! -d "policies/assignments" ]; then
+            echo "No policies/assignments directory found"
+            exit 0
+          fi
+          
+          for assignment_file in policies/assignments/*.json; do
+            if [ -f "$assignment_file" ]; then
+              assignment_name=$(basename "$assignment_file" .json)
+              echo ""
+              echo "Processing assignment: $assignment_name"
+              
+              # Read assignment properties
+              policy_name=$(jq -r '.policyDefinitionName' "$assignment_file")
+              display_name=$(jq -r '.displayName' "$assignment_file")
+              description=$(jq -r '.description // ""' "$assignment_file")
+              parameters=$(jq -c '.parameters // {}' "$assignment_file")
+              enforcement_mode=$(jq -r '.enforcementMode // "Default"' "$assignment_file")
+              
+              # Build policy definition ID
+              policy_id="/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/providers/Microsoft.Authorization/policyDefinitions/$policy_name"
+              
+              echo "  Policy: $policy_name"
+              echo "  Display Name: $display_name"
+              echo "  Enforcement: $enforcement_mode"
+              echo "  Parameters: $parameters"
+              
+              # Create or update assignment
+              az policy assignment create \
+                --name "$assignment_name" \
+                --display-name "$display_name" \
+                --policy "$policy_id" \
+                --params "$parameters" \
+                --enforcement-mode "$enforcement_mode" \
+                --description "$description" \
+                --scope "/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
+                && echo "✅ Assignment created successfully" \
+                || echo "⚠️  Assignment may already exist"
+            fi
+          done
 
       - name: Summary
         run: |
-          echo "✅ Done!"
-          az policy definition list --query "
+          echo ""
+          echo "=========================================="
+          echo "✅ Deployment Summary"
+          echo "=========================================="
+          echo ""
+          echo "📋 Custom Policy Definitions:"
+          az policy definition list \
+            --query "[?policyType=='Custom'].{Name:name, DisplayName:displayName, Mode:mode}" \
+            --output table
+          echo ""
+          echo "📌 Policy Assignments:"
+          az policy assignment list \
+            --query "[].{Name:name, DisplayName:displayName, Enforcement:enforcementMode, Scope:scope}" \
+            --output table
+          echo ""
+          echo "=========================================="
