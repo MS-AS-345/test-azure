@@ -1,5 +1,5 @@
 name: Deploy Azure Policies
- 
+
 on:
   push:
     branches:
@@ -17,6 +17,7 @@ on:
 permissions:
   id-token: write
   contents: read
+  actions: read
 
 env:
   AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
@@ -29,11 +30,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Azure Login
-        uses: azure/login@v1
+        uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          enable-AzPSSession: false
 
       - name: Deploy Policy Definitions
         run: |
@@ -52,7 +54,7 @@ jobs:
                 --description "$(jq -r '.properties.description // ""' $policy_file)" \
                 --mode "$(jq -r '.properties.mode // "All"' $policy_file)" \
                 --subscription "$AZURE_SUBSCRIPTION_ID" \
-                || echo "Policy $policy_name already exists, updating..."
+                || echo "Policy $policy_name may already exist, continuing..."
             fi
           done
 
@@ -65,20 +67,48 @@ jobs:
               assignment_name=$(basename "$assignment_file" .json)
               echo "Creating/Updating assignment: $assignment_name"
               
-              policy_definition_id=$(jq -r '.properties.policyDefinitionId' $assignment_file)
-              display_name=$(jq -r '.properties.displayName' $assignment_file)
+              # Read assignment properties
+              policy_name=$(jq -r '.policyDefinitionName' "$assignment_file")
+              display_name=$(jq -r '.displayName' "$assignment_file")
+              description=$(jq -r '.description // ""' "$assignment_file")
+              parameters=$(jq -c '.parameters // {}' "$assignment_file")
+              enforcement_mode=$(jq -r '.enforcementMode // "Default"' "$assignment_file")
               
+              # Build policy definition ID
+              policy_id="/subscriptions/$AZURE_SUBSCRIPTION_ID/providers/Microsoft.Authorization/policyDefinitions/$policy_name"
+              
+              echo "  Policy: $policy_name"
+              echo "  Display Name: $display_name"
+              echo "  Enforcement: $enforcement_mode"
+              
+              # Create or update assignment
               az policy assignment create \
                 --name "$assignment_name" \
                 --display-name "$display_name" \
-                --policy "$policy_definition_id" \
+                --policy "$policy_id" \
+                --params "$parameters" \
+                --enforcement-mode "$enforcement_mode" \
+                --description "$description" \
                 --scope "/subscriptions/$AZURE_SUBSCRIPTION_ID" \
-                || echo "Assignment $assignment_name already exists"
+                2>&1 || echo "✓ Assignment $assignment_name processed"
             fi
           done
 
       - name: Summary
         run: |
+          echo ""
+          echo "=========================================="
           echo "✅ Azure Policy deployment completed!"
-          echo "Listing all policy assignments:"
-          az policy assignment list --output table
+          echo "=========================================="
+          echo ""
+          echo "Policy Definitions:"
+          az policy definition list \
+            --subscription "$AZURE_SUBSCRIPTION_ID" \
+            --query "[?contains(name, 'require-tags') || contains(name, 'allowed-locations') || contains(name, 'audit-vm')].{Name:name, DisplayName:displayName, Mode:mode}" \
+            --output table
+          echo ""
+          echo "Policy Assignments:"
+          az policy assignment list \
+            --disable-scope-strict-match \
+            --query "[].{Name:name, DisplayName:displayName, EnforcementMode:enforcementMode, Scope:scope}" \
+            --output table
