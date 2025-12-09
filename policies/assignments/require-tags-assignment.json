@@ -1,0 +1,16 @@
+{
+  "properties": {
+    "displayName": "Require tags on all resources",
+    "policyDefinitionId": "/subscriptions/{subscription-id}/providers/Microsoft.Authorization/policyDefinitions/require-tags",
+    "scope": "/subscriptions/{subscription-id}",
+    "parameters": {
+      "tagName1": {
+        "value": "Environment"
+      },
+      "tagName2": {
+        "value": "Owner"
+      }
+    },
+    "enforcementMode": "Default"
+  }
+}
