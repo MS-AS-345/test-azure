@@ -1,5 +1,5 @@
 name: Deploy Azure Policies
-
+ 
 on:
   push:
     branches:
