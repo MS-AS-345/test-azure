@@ -1,4 +1,4 @@
-name: Deploy Azure Policies
+name: Deploy Azure Policies 
 
 on:
   push:
