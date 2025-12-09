@@ -4,7 +4,7 @@
   "description": "This assignment ensures all resources have Environment and Owner tags",
   "parameters": {
     "tagName1": {
-      "value": "Environment"
+      "value": "Env"
     },
     "tagName2": {
       "value": "Owner"
